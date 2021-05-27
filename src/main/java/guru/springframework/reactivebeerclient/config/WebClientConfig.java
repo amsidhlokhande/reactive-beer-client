@@ -8,13 +8,18 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.netty.http.client.HttpClient;
 import reactor.netty.transport.logging.AdvancedByteBufFormat;
 
+import static guru.springframework.reactivebeerclient.config.WebClientConfigProperties.BASE_URL;
+import static io.netty.handler.logging.LogLevel.DEBUG;
+import static org.springframework.web.reactive.function.client.WebClient.builder;
+import static reactor.netty.transport.logging.AdvancedByteBufFormat.TEXTUAL;
+
 @Configuration
 public class WebClientConfig {
 
     @Bean
     public WebClient getWebClient() {
-        return WebClient.builder().baseUrl(WebClientConfigProperties.BASE_URL)
-                .clientConnector(new ReactorClientHttpConnector(HttpClient.create().wiretap("reactor.netty.client.HttpClient", LogLevel.DEBUG, AdvancedByteBufFormat.TEXTUAL)))
+        return builder().baseUrl(BASE_URL)
+                .clientConnector(new ReactorClientHttpConnector(HttpClient.create().wiretap("reactor.netty.client.HttpClient", DEBUG, TEXTUAL)))
                 .build();
     }
 }

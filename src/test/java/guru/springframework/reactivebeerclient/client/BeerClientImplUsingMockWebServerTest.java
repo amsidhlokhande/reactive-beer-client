@@ -2,21 +2,14 @@ package guru.springframework.reactivebeerclient.client;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import guru.springframework.reactivebeerclient.config.WebClientConfigProperties;
 import guru.springframework.reactivebeerclient.model.BeerDto;
 import guru.springframework.reactivebeerclient.model.BeerPagedList;
-import guru.springframework.reactivebeerclient.model.v2.BeerStyleEnum;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
-import okio.Buffer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
@@ -24,10 +17,18 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.UUID;
 
+import static guru.springframework.reactivebeerclient.config.WebClientConfigProperties.BEER_V2_URL_BY_BEERID;
+import static guru.springframework.reactivebeerclient.model.v2.BeerStyleEnum.SAISON;
+import static java.util.Objects.nonNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.springframework.http.HttpHeaders.CONTENT_TYPE;
+import static org.springframework.http.HttpStatus.*;
+import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
+
 public class BeerClientImplUsingMockWebServerTest {
 
     private final MockWebServer mockWebServer = new MockWebServer();
-    private BeerClient beerClient = new BeerClientImpl(WebClient.create(mockWebServer.url("/").toString()));
+    private final BeerClient beerClient = new BeerClientImpl(WebClient.create(mockWebServer.url("/").toString()));
 
     @AfterEach
     void tearDown() throws IOException {
@@ -35,8 +36,25 @@ public class BeerClientImplUsingMockWebServerTest {
     }
 
     @Test
+    public void testGetBeer() throws JsonProcessingException {
+        UUID uuid = UUID.randomUUID();
+        BeerDto kingFisher = BeerDto.builder().id(uuid).beerName("KingFisher")
+                .beerStyle(SAISON.name())
+                .price(new BigDecimal("240.50"))
+                .upc("354354879832").build();
+        mockWebServer.enqueue(new MockResponse()
+                .setResponseCode(OK.value()).setHeader(CONTENT_TYPE, APPLICATION_JSON_VALUE)
+                .setBody(new ObjectMapper().writeValueAsString(kingFisher)));
+        Mono<BeerDto> beerByIdMono = this.beerClient.getBeerById(uuid);
+        BeerDto beerById = beerByIdMono.block();
+        Assertions.assertNotNull(beerById);
+        assertEquals(kingFisher.getId(), beerById.getId());
+        assertEquals(kingFisher.getUpc(), beerById.getUpc());
+    }
+
+    @Test
     void listBeers() {
-        mockWebServer.enqueue(new MockResponse().setResponseCode(200).setHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+        mockWebServer.enqueue(new MockResponse().setResponseCode(200).setHeader(CONTENT_TYPE, APPLICATION_JSON_VALUE)
                 .setBody(getAllBearsResponse()));
         Mono<BeerPagedList> beerPagedListMono = this.beerClient.listBeers(null, null, null, null, null);
         BeerPagedList beerPagedList = beerPagedListMono.block();
@@ -47,24 +65,24 @@ public class BeerClientImplUsingMockWebServerTest {
     @Test
     void createBeer() {
         BeerDto kingFisher = BeerDto.builder().beerName("KingFisher")
-                .beerStyle(BeerStyleEnum.SAISON.name())
+                .beerStyle(SAISON.name())
                 .price(new BigDecimal("240.50"))
                 .upc("354354879832").build();
-        mockWebServer.enqueue(new MockResponse().setResponseCode(HttpStatus.CREATED.value()).setHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE));
+        mockWebServer.enqueue(new MockResponse().setResponseCode(CREATED.value()).setHeader(CONTENT_TYPE, APPLICATION_JSON_VALUE));
 
         Mono<ResponseEntity<Void>> responseEntityMono = this.beerClient.createBeer(kingFisher);
         ResponseEntity<Void> responseEntity = responseEntityMono.block();
-        Assertions.assertTrue(responseEntity.getStatusCodeValue() == HttpStatus.CREATED.value());
+        assertEquals(nonNull(responseEntity) ? responseEntity.getStatusCodeValue() : "", CREATED.value());
     }
 
     @Test
     void updateBeer() throws JsonProcessingException {
         BeerDto kingFisher = BeerDto.builder().id(UUID.randomUUID()).beerName("KingFisher")
-                .beerStyle(BeerStyleEnum.SAISON.name())
+                .beerStyle(SAISON.name())
                 .price(new BigDecimal("240.50"))
                 .upc("354354879832").build();
-        mockWebServer.url(WebClientConfigProperties.BEER_V2_URL_BY_BEERID);
-        mockWebServer.enqueue(new MockResponse().setResponseCode(HttpStatus.OK.value()).setHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+        mockWebServer.url(BEER_V2_URL_BY_BEERID);
+        mockWebServer.enqueue(new MockResponse().setResponseCode(OK.value()).setHeader(CONTENT_TYPE, APPLICATION_JSON_VALUE)
                 .setBody("{\n" +
                         "\"id\": \"19cd3637-7911-45bb-bcae-0a1c0e19fd19\",\n" +
                         "\"beerName\": \"Mango Bobs\",\n" +
@@ -88,12 +106,36 @@ public class BeerClientImplUsingMockWebServerTest {
                 .lastUpdatedDate(beerDto.getLastUpdatedDate())
                 .quantityOnHand(beerDto.getQuantityOnHand())
                 .build();
-        mockWebServer.enqueue(new MockResponse().setResponseCode(HttpStatus.NO_CONTENT.value()).setHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE));
+        mockWebServer.enqueue(new MockResponse().setResponseCode(NO_CONTENT.value()).setHeader(CONTENT_TYPE, APPLICATION_JSON_VALUE));
         Mono<ResponseEntity<Void>> responseEntityMono = beerClient.updateBeer(beerDto.getId(), updatedBeerDto);
-        Assertions.assertTrue(responseEntityMono.block().getStatusCodeValue() == HttpStatus.NO_CONTENT.value());
+        assertEquals(responseEntityMono.block().getStatusCodeValue(), NO_CONTENT.value());
 
     }
 
+    @Test
+    public void testGetBeerByUPC() throws JsonProcessingException {
+        BeerDto kingFisher = BeerDto.builder().id(UUID.randomUUID()).beerName("KingFisher")
+                .beerStyle(SAISON.name())
+                .price(new BigDecimal("240.50"))
+                .upc("354354879832").build();
+        mockWebServer.enqueue(new MockResponse()
+                .setResponseCode(OK.value()).setHeader(CONTENT_TYPE, APPLICATION_JSON_VALUE)
+                .setBody(new ObjectMapper().writeValueAsString(kingFisher)));
+        Mono<BeerDto> beerByIdMono = this.beerClient.getBeerByUPC(kingFisher.getUpc());
+        BeerDto beerById = beerByIdMono.block();
+        Assertions.assertNotNull(beerById);
+        assertEquals(kingFisher.getUpc(), beerById.getUpc());
+        assertEquals(kingFisher.getId(), beerById.getId());
+    }
+
+    @Test
+    public void testDeleteBeerById() {
+        mockWebServer.enqueue(new MockResponse()
+                .setResponseCode(NO_CONTENT.value()).setHeader(CONTENT_TYPE, APPLICATION_JSON_VALUE));
+        Mono<ResponseEntity<Void>> responseEntityMono = beerClient.deleteBeerById(UUID.randomUUID());
+        ResponseEntity<Void> responseEntity = responseEntityMono.block();
+        assertEquals(responseEntity.getStatusCode(), NO_CONTENT);
+    }
 
     private String getAllBearsResponse() {
         return "{\n" +
